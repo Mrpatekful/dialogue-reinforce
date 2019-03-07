@@ -13,8 +13,9 @@ import torch
 from parlai.core.params import ParlaiParser
 from parlai.core.logs import TensorboardLogger
 from parlai.core.agents import _create_task_agents
+from parlai.core.wordls import BatchWorld
 
-from world import SelfDialogWorld
+from world import SelfDialogWorld, BatchSe
 from agents import create_agents
 
 
@@ -41,8 +42,8 @@ def setup_args():
         help=('number of iterations of validation where result'
                 ' does not improve before we stop training'))
     train.add_argument(
-        '-lfc', '--load-from-checkpoint',
-        type='bool', default=False,
+        '-dl', '--dialog-rounds',
+        type=int, default=2,
         hidden=True,
         help='load model from checkpoint if available')
     TensorboardLogger.add_cmdline_args(parser)
@@ -54,15 +55,6 @@ def create_optimizer(opt, model):
             {'params': model.parameters(), 
              ' lr': opt['learning_rate']}
         ])
-
-
-def create_task_world(opt, user_agents, default_world=None):
-    task_agents = _create_task_agents(opt)
-    
-    world_class, task_agents = _get_task_world(
-        opt, user_agents, default_world=default_world
-    )
-    return world_class(opt, task_agents + user_agents)
 
 
 def create_task(opt, ):
@@ -81,12 +73,19 @@ def create_task(opt, ):
     if not task:
         opt['task'] = 'pytorch_teacher'
 
-    world = create_task_world(opt, user_agents, 
-        default_world=default_world)
+    active_agent = 
+
+    world = create_task_world(opt, user_agents)
+
+    if opt.get('batchsize', 1) > 1:
+        world = BatchWorld(opt, world)
+
+    return world
 
 
-def create_task_world(opt, user_agents):
-    task_agents = _create_task_agents(opt)
+def create_task_world(opt, user_agent):
+    static_agent = _create_task_agents(opt)
+    return SelfDialogWorld(opt, active_agent, static_agent)
 
 
 def main(opt):
@@ -99,11 +98,8 @@ def main(opt):
         for iteration in range(static.iteration_per_epoch):
             optimizer.zero_grad()
 
-            for _ in range(opt['rounds']):
+            for _ in range(opt['dialog_rounds']):
                 world.parley()
-
-
-
 
 
 if __name__ == '__main__':

@@ -1,3 +1,3 @@
 #!/bin/sh
 
-python rlchat/train.py
+python $(dirname "$0")/../rlchat/train.py
