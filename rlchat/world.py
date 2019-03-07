@@ -1,9 +1,10 @@
 """
+
 @author:    Patrik Purgai
 @copyright: Copyright 2019, rlchat
 @license:   MIT
 @email:     purgai.patrik@gmail.com
-@date:      2019.01.20.
+@date:      2019.02.20.
 """
 
 # pylint: disable=import-error
