@@ -262,6 +262,6 @@ def create_teacher(opt, model=None):
             self.model = model
 
         def batch_act(self, observations):
-            pass
+            if 
 
     return RLPytorchDataTeacher(opt, model)
