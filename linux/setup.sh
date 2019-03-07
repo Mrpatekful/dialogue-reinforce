@@ -1,6 +1,10 @@
 #!/bin/sh
 
-pip install -r requirements.txt
+# Installs the required libraries, including ParlAI.
+
+pip install -r $(dirname "$0")/../requirements.txt
+
+pip install torch torchvision
 
 git clone https://github.com/facebookresearch/ParlAI.git ~/ParlAI
-cd ~/ParlAI; python setup.py develop
+python ~/ParlAI/setup.py develop

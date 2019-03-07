@@ -56,6 +56,15 @@ def create_optimizer(opt, model):
         ])
 
 
+def create_task_world(opt, user_agents, default_world=None):
+    task_agents = _create_task_agents(opt)
+    
+    world_class, task_agents = _get_task_world(
+        opt, user_agents, default_world=default_world
+    )
+    return world_class(opt, task_agents + user_agents)
+
+
 def create_task(opt, ):
     """Creates a world + task_agents (aka a task)
     assuming ``opt['task']="task_dir:teacher_class:options"``
