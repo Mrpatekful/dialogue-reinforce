@@ -13,10 +13,10 @@ import torch
 from parlai.core.params import ParlaiParser
 from parlai.core.logs import TensorboardLogger
 from parlai.core.agents import _create_task_agents
-from parlai.core.wordls import BatchWorld
+from parlai.core.worlds import BatchWorld
 
-from world import SelfDialogWorld, BatchSe
-from agents import create_agents
+from worlds import SelfDialogWorld
+from agents import create_agent, create_teacher
 
 
 def setup_args():
@@ -73,9 +73,9 @@ def create_task(opt, ):
     if not task:
         opt['task'] = 'pytorch_teacher'
 
-    active_agent = 
+    active_agent = create_agent(opt)
 
-    world = create_task_world(opt, user_agents)
+    world = create_task_world(opt, active_agent)
 
     if opt.get('batchsize', 1) > 1:
         world = BatchWorld(opt, world)
@@ -83,26 +83,24 @@ def create_task(opt, ):
     return world
 
 
-
-
-
-def create_task_world(opt, user_agent):
+def create_task_world(opt, active_agent):
     static_agent = _create_task_agents(opt)
     return SelfDialogWorld(opt, active_agent, static_agent)
 
 
 def main(opt):
-    dynamic, static = create_agents(opt)
-    optimizer = create_optimizer(opt, dynamic)
+    pass
+    # TODO
+    # optimizer = create_optimizer(opt, dynamic)
 
-    world = SelfDialogWorld(opt, dynamic, static)
+    # world = SelfDialogWorld(opt, dynamic, static)
 
-    for epoch in range(opt['num_epochs']):
-        for iteration in range(static.iteration_per_epoch):
-            optimizer.zero_grad()
+    # for epoch in range(opt['num_epochs']):
+    #     for iteration in range(static.iteration_per_epoch):
+    #         optimizer.zero_grad()
 
-            for _ in range(opt['dialog_rounds']):
-                world.parley()
+    #         for _ in range(opt['dialog_rounds']):
+    #             world.parley()
 
 
 if __name__ == '__main__':
