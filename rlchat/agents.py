@@ -31,7 +31,7 @@ def decode_probabilistic(model, encoder_states, batch_size,
                          max_len, num_det_steps):
     """
     Probabilistic search.
-    
+
     Arguments:
         encoder_states: Output of the encoder model.
         batch_size: Batch size. Because encoder_states is 
@@ -138,7 +138,7 @@ def replace_forward(model):
                                '``build_model`` method.')
 
     model.forward = forward.__get__(model)
-    
+
 
 def get_agent_type(opt):
     """
@@ -170,7 +170,7 @@ def get_agent_type(opt):
                 'to make sure it is correct: {}'.format(
                     new_opt['dict_file']))
         model_class = get_agent_module(new_opt['model'])
-        
+
         return model_class
     else:
         return None
@@ -203,7 +203,7 @@ def create_agent(opt):
 
             self.match_batch(
                 batch_reply, batch.valid_indices, output)
-            
+
             return self.batchify(batch_reply)
 
         def train_step(self, batch):
