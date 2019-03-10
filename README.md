@@ -4,4 +4,24 @@ The theoretical background of this project is mainly inspired by **[Deep Reinfor
 
 ## Setup
 
-If you are on Linux, run ``setup.sh`` in the *rlchat/linux* folder and run ``setup.ps1`` if you are on Windows.
+For better reusability and modularization of our code we use [ParlAI](http://www.parl.ai/).
+
+Scripts are available for initalizing the environment on linux and windows in the corresponding directories.
+
+```
+./linux/setup.sh
+```
+
+## Usage
+
+To obtain an initial model with supervised learning, run the ``train.sh`` or ``train.ps`` scripts. After obtaining an initial policy for the reinforcement learning based fine-tuning, run ``reinforce.sh`` or ``reinforce.ps1`` with the same parameters as the pre-training script.
+
+```
+./linux/train.sh --task dailydialog --model seq2seq
+```
+
+```
+./linuc/reinforce.sh --task dailydialog --model seq2seq
+```
+
+``reinforce.sh`` will load the model pre-trained model from either the default ``checkpoints/<model_name>`` directory or the one provided in the optional ``--model_file``.
