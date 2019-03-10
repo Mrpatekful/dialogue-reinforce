@@ -9,14 +9,14 @@
 
 import numpy as np
 import torch
+import copy
 
 from parlai.core.params import ParlaiParser
 from parlai.core.logs import TensorboardLogger
 from parlai.core.agents import _create_task_agents
-from parlai.core.worlds import BatchWorld
 
-from worlds import SelfDialogWorld
-from agents import create_agent, create_teacher
+from worlds import RLDialogWorld
+from agents import create_agent, freeze_agent
 
 
 def setup_args():
@@ -50,13 +50,6 @@ def setup_args():
     return parser
 
 
-def create_optimizer(opt, model):
-    return torch.optim.Adam([
-            {'params': model.parameters(), 
-             ' lr': opt['learning_rate']}
-        ])
-
-
 def create_task(opt, ):
     """Creates a world + task_agents (aka a task)
     assuming ``opt['task']="task_dir:teacher_class:options"``
@@ -67,40 +60,36 @@ def create_task(opt, ):
     if not (task or pyt_task or pyt_dataset):
         raise RuntimeError(
             'No task specified. Please select a task with ' + 
-            '--task {task_name}.'
-        )
+            '--task {task_name}.')
 
     if not task:
         opt['task'] = 'pytorch_teacher'
 
-    active_agent = create_agent(opt)
+    active_agent, static_agent = create_agent(opt)
 
-    world = create_task_world(opt, active_agent)
+    world = create_task_world(opt, active_agent, static_agent)
 
     if opt.get('batchsize', 1) > 1:
-        world = BatchWorld(opt, world)
+        raise NotImplementedError('Btaching is not implemented yet.')
+        # world = BatchWorld(opt, world)
 
     return world
 
 
-def create_task_world(opt, active_agent):
-    static_agent = _create_task_agents(opt)
-    return SelfDialogWorld(opt, active_agent, static_agent)
+def create_task_world(opt, active_agent, static_agent):
+    teacher = _create_task_agents(opt)
+    return RLDialogWorld(opt, active_agent, static_agent, teacher)
 
 
 def main(opt):
-    pass
-    # TODO
-    # optimizer = create_optimizer(opt, dynamic)
+    opt['batch_size'] = 1
+    active_agent = create_agent(opt)
+    static_agent = copy.deepcopy(active_agent)
+    freeze_agent(static_agent)
 
-    # world = SelfDialogWorld(opt, dynamic, static)
+    world = create_task_world(opt, active_agent, static_agent)
 
-    # for epoch in range(opt['num_epochs']):
-    #     for iteration in range(static.iteration_per_epoch):
-    #         optimizer.zero_grad()
-
-    #         for _ in range(opt['dialog_rounds']):
-    #             world.parley()
+    world.parley()
 
 
 if __name__ == '__main__':

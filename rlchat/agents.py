@@ -11,17 +11,17 @@
 
 import torch
 
-from parlai.core.agents import (_load_opt_file, get_agent_module,  # pylint: disable=no-name-in-module
-                                add_task_flags_to_agent_opt,
-                                get_task_module) 
+from parlai.core.agents import (
+    _load_opt_file, 
+    get_agent_module, 
+    add_task_flags_to_agent_opt,
+    get_task_module)
 
-from parlai.core.torch_generator_agent import TorchGeneratorModel, \
-                                              TorchGeneratorAgent
-
-from parlai.core.pytorch_data_teacher import PytorchDataTeacher
+from parlai.core.torch_generator_agent import (
+    TorchGeneratorModel,
+    TorchGeneratorAgent)
 
 from torch.autograd import Variable, backward
-
 from torch.nn import Module
 
 from os.path import isfile
@@ -89,7 +89,7 @@ def compute_det_steps(model, step, max_len=None):
 
 def forward(self, *inputs, ys=None, cand_params=None, 
             prev_enc=None, max_len=None, batch_size=None, 
-            step=None):
+            step=None, use_probabilistic_decode=False):
     """
     Calculates the forward pass for the model. This function
     is assigned to `TorchGeneratorModel` instances with descripor 
@@ -114,11 +114,17 @@ def forward(self, *inputs, ys=None, cand_params=None,
         # use teacher forcing
         scores, preds = self.decode_forced(encoder_states, ys)
     else:
-        scores, preds = self.decode_probabilistic(
-            encoder_states,
-            batch_size,
-            max_len or self.longest_label,
-            compute_det_steps(self, step, max_len))
+        if use_probabilistic_decode:
+            scores, preds = self.decode_probabilistic(
+                encoder_states,
+                batch_size,
+                max_len or self.longest_label,
+                compute_det_steps(self, step, max_len))
+        else:
+            scores, preds = self.decode_greedy(
+                encoder_states,
+                batch_size,
+                max_len or self.longest_label)
 
     return scores, preds, encoder_states
 
@@ -181,6 +187,7 @@ def create_agent(opt):
 
     class RLTorchGeneratorAgent(torch_generator_agent_subclass):
 
+        @torch.no_grad()
         def sample_step(self, batch):
             """
             Sample a single batch of examples.
@@ -191,7 +198,8 @@ def create_agent(opt):
                 {'id': self.getID()} for _ in range(batch_size)
             ]
             output = self.model(
-                *self._model_input(batch), ys=batch.label_vec)
+                *self._model_input(batch), ys=batch.label_vec, 
+                use_probabilistic_decode=True)
 
             self.match_batch(
                 batch_reply, batch.valid_indices, output)
@@ -203,11 +211,9 @@ def create_agent(opt):
             Train on a single batch of examples.
             """
             try:
-                with torch.no_grad():
-                    batch = self.sample_step(batch)
-                with torch.enable_grad():
-                    loss, model_output = self.compute_loss(
-                        batch, return_output=True)
+                batch = self.sample_step(batch)
+                loss, model_output = self.compute_loss(
+                    batch, return_output=True)
                 self.metrics['loss'] += loss.item()
 
             except RuntimeError as e:
@@ -225,7 +231,7 @@ def create_agent(opt):
                     raise e
 
             return model_output
-            
+
         def build_model(self, *args, **kwargs):
             super(RLTorchGeneratorAgent, self).build_model(*args, **kwargs)
             replace_forward(self.model)
@@ -233,35 +239,7 @@ def create_agent(opt):
     return RLTorchGeneratorAgent(opt)
 
 
-def create_task_agent_from_taskname(opt):
-    """
-    Create task agent(s) assuming the input 
-    ``task_dir:teacher_class``.
-    """
-    if not (opt.get('task') or
-            opt.get('pytorch_teacher_task') or
-            opt.get('pytorch_teacher_dataset')):
-        raise RuntimeError(
-            'No task specified. Please select a task with ' +
-            '--task {task_name}.')
-    if not opt.get('task'):
-        opt['task'] = 'pytorch_teacher'
-    teacher_class = get_task_module(opt['task'])
-    add_task_flags_to_agent_opt(teacher_class, opt, opt['task'])
-    return teacher_class
-
-
-def create_teacher(opt, model=None):
-    """Creates the teacher for the specified task."""
-    pytorch_data_teacher_subclass = create_task_agent_from_taskname(opt)
-
-    class RLPytorchDataTeacher(pytorch_data_teacher_subclass):
-
-        def __init__(self, opt, model, shared=None):
-            super(RLPytorchDataTeacher, self).__init__(opt, shared)
-            self.model = model
-
-        def batch_act(self, observations):
-            pass
-
-    return RLPytorchDataTeacher(opt, model)
+def freeze_agent(agent):
+    for parameter in agent.model.parameters():
+        parameter.requires_grad = False
+    agent.model.eval()
