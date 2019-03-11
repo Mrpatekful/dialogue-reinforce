@@ -24,17 +24,20 @@ from parlai.scripts.build_pytorch_data import get_pyt_dict_file
 from parlai.scripts.build_dict import build_dict
 
 from worlds import RLDialogWorld
-from agents import create_agent, freeze_agent
+from agents import create_agent, freeze_agent  # pylint: disable=import-error
 
 
 def setup_rl_args():
     parser = setup_args()
     reinforce = parser.add_argument_group('Reinforce Arguments')
     reinforce.add_argument(
-        '-dl', '--dialog-rounds',
+        '-dl', '--dialog_rounds',
         type=int, default=2,
-        hidden=True,
-        help='load model from checkpoint if available')
+        help='Number of rollouts rounds for estimating the reward.')
+    reinforce.add_argument(
+        '-dl', '--dialog_branches',
+        type=int, default=3,
+        help='Branches of the active agent responses during rollout.')
     return parser
 
 
@@ -52,8 +55,6 @@ def create_task(opt, active_agent, static_agent):
 
     if not task:
         opt['task'] = 'pytorch_teacher'
-
-
 
     world = create_task_world(opt, active_agent, static_agent)
 
@@ -83,10 +84,12 @@ class ReinforceLoop(TrainLoop):
             opt['init_model'] = opt['model_file'] + '.checkpoint'
             trainstats_suffix = '.checkpoint.trainstats'
         else:
-            raise RuntimeError('WARNING: Reinforcement learning'
-                               ' must be initialized by a model.checkpoint '
-                               'file and {} does not exist.'.format(
-                                   opt['model_file'] + '.checkpoint'))
+            pass
+            # TODO for testing only
+            # raise RuntimeError('WARNING: Reinforcement learning'
+            #                    ' must be initialized by a model.checkpoint '
+            #                    'file and {} does not exist.'.format(
+            #                        opt['model_file'] + '.checkpoint'))
         # Possibly build a dictionary (not all models do this).
         if (
             opt['dict_build_first'] and
@@ -106,8 +109,13 @@ class ReinforceLoop(TrainLoop):
 
         # Create model and assign it to the specified task
         self.agent = create_agent(opt)
+        self.agent.id += 'active'
+
+        # Freeze the model for the static dialogue partner
         static_agent = copy.deepcopy(self.agent)
+        static_agent.id += 'static'
         freeze_agent(static_agent)
+
         self.world = create_task(opt, self.agent, static_agent)
 
         # set up timers

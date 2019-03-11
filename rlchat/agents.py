@@ -21,6 +21,9 @@ from parlai.core.torch_generator_agent import (
     TorchGeneratorModel,
     TorchGeneratorAgent)
 
+from parlai.core.torch_agent import Output
+from parlai.core.utils import padded_tensor
+
 from torch.autograd import Variable, backward
 from torch.nn import Module
 
@@ -88,7 +91,7 @@ def compute_det_steps(model, step, max_len=None):
 
 
 def forward(self, *inputs, ys=None, cand_params=None, 
-            prev_enc=None, max_len=None, batch_size=None, 
+            prev_enc=None, maxlen=None, bsz=None, 
             step=None, use_probabilistic_decode=False):
     """
     Calculates the forward pass for the model. This function
@@ -117,14 +120,14 @@ def forward(self, *inputs, ys=None, cand_params=None,
         if use_probabilistic_decode:
             scores, preds = self.decode_probabilistic(
                 encoder_states,
-                batch_size,
-                max_len or self.longest_label,
-                compute_det_steps(self, step, max_len))
+                bsz,
+                maxlen or self.longest_label,
+                compute_det_steps(self, step, maxlen))
         else:
             scores, preds = self.decode_greedy(
                 encoder_states,
-                batch_size,
-                max_len or self.longest_label)
+                bsz,
+                maxlen or self.longest_label)
 
     return scores, preds, encoder_states
 
@@ -187,24 +190,34 @@ def create_agent(opt):
 
     class RLTorchGeneratorAgent(torch_generator_agent_subclass):
 
+        def __init__(self, *args, shared=None, **kwargs):
+            super(RLTorchGeneratorAgent, self).__init__(
+                *args, shared=shared, **kwargs)
+            self.actions = [] # TODO implement shared actions
+
         @torch.no_grad()
         def sample_step(self, batch):
             """
-            Sample a single batch of examples.
+            Sample a single batch of examples which will be used as 
+            labels for the train step.
             """
             self.model.eval()
-            batch_size = batch.text_vec.size(0)
-            batch_reply = [
-                {'id': self.getID()} for _ in range(batch_size)
-            ]
-            output = self.model(
+
+            _, preds, _ = self.model(
                 *self._model_input(batch), ys=batch.label_vec, 
                 use_probabilistic_decode=True)
 
-            self.match_batch(
-                batch_reply, batch.valid_indices, output)
+            self.add_labels(batch, preds)
 
-            return self.batchify(batch_reply)
+            return batch
+
+        def add_labels(self, batch, label_vecs):
+            labels = [self._v2t(l) for l in label_vecs]
+            ys, y_lens = padded_tensor(label_vecs, self.NULL_IDX, self.use_cuda)
+                
+            batch.labels=labels
+            batch.label_vec=ys
+            batch.label_lengths=y_lens
 
         def train_step(self, batch):
             """
@@ -212,12 +225,10 @@ def create_agent(opt):
             """
             try:
                 batch = self.sample_step(batch)
-                loss, model_output = self.compute_loss(
-                    batch, return_output=True)
+                loss = self.compute_loss(batch)
                 self.metrics['loss'] += loss.item()
 
             except RuntimeError as e:
-                # catch out of memory exceptions during fwd/bck (skip batch)
                 if 'out of memory' in str(e):
                     print('| WARNING: ran out of memory, skipping batch. '
                         'if this happens frequently, decrease batchsize or '
@@ -229,11 +240,33 @@ def create_agent(opt):
                     self._init_cuda_buffer(8, 8, True)
                 else:
                     raise e
+            
+            return Output(batch.labels, None)
 
-            return model_output
+        def observe(self, observation):
+            """
+            Calculates the reward and copies the model if provided
+            additionally to the ``super().observe()``.
+            """
+            if observation.get('reward') is not None:
+                for action in self.actions:
+                    action.reinforce(observation['reward'])
+                backward(self.actions, 
+                    [None for _ in self.actions], retain_graph=True)
+
+                for parameter in self.model.parameters():  # pylint: disable=access-member-before-definition
+                    parameter.grad.data.clamp_(min=-5, max=5)
+
+            if observation.get('model') is not None:
+                # Deepcopied and frozen clone of the model
+                self.model = observation['model']
+
+            return super(RLTorchGeneratorAgent, self).observe(
+                observation)
 
         def build_model(self, *args, **kwargs):
-            super(RLTorchGeneratorAgent, self).build_model(*args, **kwargs)
+            super(RLTorchGeneratorAgent, self).build_model(
+                *args, **kwargs)
             replace_forward(self.model)
 
     return RLTorchGeneratorAgent(opt)

@@ -13,41 +13,77 @@ import torch
 
 from torch.autograd import backward
 
-from parlai.core.worlds import MultiAgentDialogWorld 
+from parlai.core.worlds import MultiAgentDialogWorld
+from collections import namedtuple
 
 
 def calculate_reward(actions):
     return 0
 
 
+Action = namedtuple('Action', ['actor_id', 'action', 'responses'])
+"""
+
+"""
+
+
 class RLDialogWorld(MultiAgentDialogWorld):
 
-    def __init__(self, opt, static_agent, active_agent, teacher, shared=None):
+    def __init__(self, opt, static_agent, active_agent, 
+                 teacher, shared=None):
         self.id = 'RLDialogWorld'
-        self.actions = []
-        self.rollout_actions = []
         self.episode_batch = None
+        self.active_agent = active_agent
+        self.static_agent = static_agent
         super(RLDialogWorld, self).__init__(
-            opt, teacher + [static_agent, active_agent], shared)
+            opt, teacher + [static_agent, active_agent], 
+            shared)
 
     def parley(self):
         """"""
-        print(self.agents[0].act())
-        # self.active_agent.zero_grad()
-        # static_action = self.static_agent.act()
+        initial_action = self.agents[0].act()
 
-        # for _ in range(self.opt['rollout_len']):
-        #     action = self.rollout(action)
+        self.active_agent.zero_grad()
+        actions = self.rollout(initial_action)
 
-        # reward = calculate_reward(self.rollout_actions)
-        # backward(self.rollout_actions, 
-        #     [None for _ in self.rollout_actions], retain_graph=True)
-        # self.active_agent.update_params()
+        reward = calculate_reward(actions)
 
-    def rollout(self, batch):
+        self.active_agent.observe({'reward': reward})
+        self.active_agent.update_params()
+
+    def rollout(self, initial_action):
         """"""
-        pass
-        # self.active_agent.observe(batch)
-        # rollout_actions = []
-        # for _ in range(self.opt['branch_size']):
-        #     rollout_actions.append(self.active_agent.act())
+        def roll(action, num_rollouts):
+            if num_rollouts == 0:
+                return action
+
+            num_rollouts -= 1
+
+            if action.actor_id == self.active_agent.id:
+                self.static_agent.observe(action.action)
+                static_action = Action(
+                    actor_id=self.static_agent.id, 
+                    action=self.static_agent.act(), 
+                    responses=[])
+
+                action.responses.append(
+                    roll(static_action, num_rollouts))
+
+            else:
+                self.active_agent.observe(action.action)
+                for _ in range(self.opt['dialog_branches']):
+                    active_action = Action(
+                            actor_id=self.active_agent.id,
+                            action=self.active_agent.act(), 
+                            responses=[])
+
+                    action.responses.append(
+                        roll(active_action, num_rollouts))
+
+            return action
+                        
+        return roll(Action(
+                        actor_id=self.static_agent.id, 
+                        action=initial_action, 
+                        responses=[]), 
+                    self.opt['dialog_rounds'])
