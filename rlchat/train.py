@@ -109,10 +109,11 @@ class ReinforceLoop(TrainLoop):
 
         # Create model and assign it to the specified task
         self.agent = create_agent(opt)
-        self.agent.id += 'active'
 
         # Freeze the model for the static dialogue partner
         static_agent = copy.deepcopy(self.agent)
+        self.agent.id += 'active'
+
         static_agent.id += 'static'
         freeze_agent(static_agent)
 

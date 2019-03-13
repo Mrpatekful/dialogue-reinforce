@@ -18,7 +18,7 @@ from collections import namedtuple
 
 
 def calculate_reward(actions):
-    return 0
+    return 1
 
 
 Action = namedtuple('Action', ['actor_id', 'action', 'responses'])
@@ -29,7 +29,7 @@ Action = namedtuple('Action', ['actor_id', 'action', 'responses'])
 
 class RLDialogWorld(MultiAgentDialogWorld):
 
-    def __init__(self, opt, static_agent, active_agent, 
+    def __init__(self, opt, active_agent, static_agent,
                  teacher, shared=None):
         self.id = 'RLDialogWorld'
         self.episode_batch = None

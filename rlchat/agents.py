@@ -25,6 +25,7 @@ from parlai.core.torch_agent import Output
 from parlai.core.utils import padded_tensor
 
 from torch.autograd import Variable, backward
+from torch.distributions import Categorical
 from torch.nn import Module
 
 from os.path import isfile
@@ -54,7 +55,8 @@ def decode_probabilistic(model, encoder_states, batch_size,
         if step < num_det_steps:
             _, preds = scores.max(dim=-1)
         else:
-            preds = scores.multinomial(num_samples=1)
+            distribution = Categorical(scores)
+            preds = distribution.sample()
         
         logits.append(scores)
         step_output = torch.cat([step_output, preds], dim=1)  # pylint: disable=no-member
@@ -95,7 +97,7 @@ def forward(self, *inputs, ys=None, cand_params=None,
             step=None, use_probabilistic_decode=False):
     """
     Calculates the forward pass for the model. This function
-    is assigned to `TorchGeneratorModel` instances with descripor 
+    is assigned to `TorchGeneratorModel` instances with descriptor 
     protocol to replace the `decode_greedy` function with 
     `decode_probabilistic`.
     """
@@ -193,7 +195,7 @@ def create_agent(opt):
         def __init__(self, *args, shared=None, **kwargs):
             super(RLTorchGeneratorAgent, self).__init__(
                 *args, shared=shared, **kwargs)
-            self.actions = [] # TODO implement shared actions
+            self.log_probs = [] # TODO implement shared actions
 
         @torch.no_grad()
         def sample_step(self, batch):
@@ -213,11 +215,29 @@ def create_agent(opt):
 
         def add_labels(self, batch, label_vecs):
             labels = [self._v2t(l) for l in label_vecs]
-            ys, y_lens = padded_tensor(label_vecs, self.NULL_IDX, self.use_cuda)
+            ys, y_lens = padded_tensor(
+                label_vecs, self.NULL_IDX, self.use_cuda)
                 
             batch.labels=labels
             batch.label_vec=ys
             batch.label_lengths=y_lens
+
+        def compute_log_prob(self, batch):
+            if batch.label_vec is None:
+                raise ValueError('Cannot compute loss without a label.')
+            model_output = self.model(*self._model_input(batch), ys=batch.label_vec)
+            scores, preds, *_ = model_output
+            score_view = scores.view(-1, scores.size(-1))
+            log_prob = self.criterion(score_view, batch.label_vec.view(-1))
+
+            notnull = batch.label_vec.ne(self.NULL_IDX)
+            target_tokens = notnull.long().sum().item()
+            correct = ((batch.label_vec == preds) * notnull).sum().item()
+            self.metrics['correct_tokens'] += correct
+            self.metrics['nll_loss'] += log_prob.item()
+            self.metrics['num_tokens'] += target_tokens
+            log_prob /= target_tokens  # average loss per token
+            return log_prob
 
         def train_step(self, batch):
             """
@@ -225,8 +245,9 @@ def create_agent(opt):
             """
             try:
                 batch = self.sample_step(batch)
-                loss = self.compute_loss(batch)
-                self.metrics['loss'] += loss.item()
+                log_prob = self.compute_log_prob(batch)
+                self.metrics['loss'] += log_prob.item()
+                self.log_probs.append(log_prob)
 
             except RuntimeError as e:
                 if 'out of memory' in str(e):
@@ -249,10 +270,12 @@ def create_agent(opt):
             additionally to the ``super().observe()``.
             """
             if observation.get('reward') is not None:
-                for action in self.actions:
-                    action.reinforce(observation['reward'])
-                backward(self.actions, 
-                    [None for _ in self.actions], retain_graph=True)
+                reward = observation['reward']
+                for log_prob in self.log_probs:
+                    loss = log_prob * reward
+                    loss.backward()
+                
+                self.log_probs = []
 
                 for parameter in self.model.parameters():  # pylint: disable=access-member-before-definition
                     parameter.grad.data.clamp_(min=-5, max=5)
