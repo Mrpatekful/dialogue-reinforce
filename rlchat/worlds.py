@@ -18,6 +18,12 @@ from collections import namedtuple
 
 
 def calculate_reward(actions):
+    length = 0
+    while len(actions.responses) > 0:
+        print(actions)
+        actions = actions.responses[0]
+        length += 1
+    print(length)
     return 1
 
 
@@ -54,7 +60,7 @@ class RLDialogWorld(MultiAgentDialogWorld):
     def rollout(self, initial_action):
         """"""
         def roll(action, num_rollouts):
-            if num_rollouts == 0:
+            if num_rollouts == -1:
                 return action
 
             num_rollouts -= 1
@@ -81,7 +87,7 @@ class RLDialogWorld(MultiAgentDialogWorld):
                         roll(active_action, num_rollouts))
 
             return action
-                        
+
         return roll(Action(
                         actor_id=self.static_agent.id, 
                         action=initial_action, 

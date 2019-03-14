@@ -225,7 +225,8 @@ def create_agent(opt):
         def compute_log_prob(self, batch):
             if batch.label_vec is None:
                 raise ValueError('Cannot compute loss without a label.')
-            model_output = self.model(*self._model_input(batch), ys=batch.label_vec)
+            model_output = self.model(
+                *self._model_input(batch), ys=batch.label_vec)
             scores, preds, *_ = model_output
             score_view = scores.view(-1, scores.size(-1))
             log_prob = self.criterion(score_view, batch.label_vec.view(-1))
