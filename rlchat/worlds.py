@@ -15,23 +15,38 @@ from torch.autograd import backward
 
 from parlai.core.worlds import MultiAgentDialogWorld
 from collections import namedtuple
+from itertools import chain
 
 
 def calculate_reward(actions):
-    length = 0
-    while len(actions.responses) > 0:
-        print(actions)
-        actions = actions.responses[0]
-        length += 1
-    print(length)
+    for source, target in source_target_generator(actions):
+        print(source, target)
     return 1
 
 
-Action = namedtuple('Action', ['actor_id', 'action', 'responses'])
+Action = namedtuple('Action', ['id', 'action', 'responses'])
 """
 
 """
 
+
+def iterate_reponses(action):
+    for response in action.responses:
+        yield action.action, response.action
+
+
+def source_target_generator(action):
+    source_target_pairs = []
+
+    if len(action.responses) == 0:
+        return source_target_pairs
+    
+    for response in action.responses:
+        source_target_pairs = chain(
+            iterate_reponses(response), source_target_pairs)
+
+    return source_target_pairs
+    
 
 class RLDialogWorld(MultiAgentDialogWorld):
 
@@ -63,12 +78,10 @@ class RLDialogWorld(MultiAgentDialogWorld):
             if num_rollouts == -1:
                 return action
 
-            num_rollouts -= 1
-
-            if action.actor_id == self.active_agent.id:
+            if action.id == self.active_agent.id:
                 self.static_agent.observe(action.action)
                 static_action = Action(
-                    actor_id=self.static_agent.id, 
+                    id=self.static_agent.id, 
                     action=self.static_agent.act(), 
                     responses=[])
 
@@ -77,9 +90,10 @@ class RLDialogWorld(MultiAgentDialogWorld):
 
             else:
                 self.active_agent.observe(action.action)
+                num_rollouts -= 1
                 for _ in range(self.opt['dialog_branches']):
                     active_action = Action(
-                            actor_id=self.active_agent.id,
+                            id=self.active_agent.id,
                             action=self.active_agent.act(), 
                             responses=[])
 
@@ -89,7 +103,7 @@ class RLDialogWorld(MultiAgentDialogWorld):
             return action
 
         return roll(Action(
-                        actor_id=self.static_agent.id, 
+                        id=self.static_agent.id, 
                         action=initial_action, 
                         responses=[]), 
                     self.opt['dialog_rounds'])
