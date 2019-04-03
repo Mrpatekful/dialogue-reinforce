@@ -1,6 +1,10 @@
 # Training chatbot models with reinforcement learning
 
-The theoretical background of this project is mainly inspired by **[Deep Reinforcement Learning for Dialogue Generation](https://arxiv.org/abs/1606.01541)**.
+## Techniques
+
+- **[Deep Reinforcement Learning for Dialogue Generation](https://arxiv.org/abs/1606.01541)**
+
+- **[A Diversity-Promoting Objective Function for Neural Conversation Models](https://arxiv.org/pdf/1510.03055v2.pdf)**
 
 ## Setup
 

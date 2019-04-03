@@ -31,12 +31,16 @@ def setup_rl_args():
     parser = setup_args()
     reinforce = parser.add_argument_group('Reinforce Arguments')
     reinforce.add_argument(
-        '-dl', '--dialog_rounds',
-        type=int, default=3,
+        '-dl', 
+        '--dialog_rounds',
+        type=int, 
+        default=3,
         help='Number of rollouts rounds for estimating the reward.')
     reinforce.add_argument(
-        '-dl', '--dialog_branches',
-        type=int, default=3,
+        '-dl', 
+        '--dialog_branches',
+        type=int, 
+        default=3,
         help='Branches of the active agent responses during rollout.')
     return parser
 

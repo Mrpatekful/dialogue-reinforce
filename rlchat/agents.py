@@ -297,6 +297,9 @@ def create_agent(opt):
 
 
 def freeze_agent(agent):
+    """
+    Sets the gradient claculations off for a model.
+    """
     for parameter in agent.model.parameters():
         parameter.requires_grad = False
     agent.model.eval()

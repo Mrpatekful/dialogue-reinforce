@@ -18,16 +18,19 @@ from collections import namedtuple
 from itertools import chain
 
 
-def calculate_reward(actions):
-    for source, target in source_target_generator(actions):
-        print(source, target)
-    return 1
-
-
 Action = namedtuple('Action', ['id', 'action', 'responses'])
 """
+A node in the action-response tree.
+:param id: str, the id of the actor.
+:param action: str, 
 
 """
+
+
+def calculate_reward(actions):
+    for index, (source, target) in enumerate(source_target_generator(actions)):
+        print(index)
+    return 1
 
 
 def iterate_reponses(action):
@@ -43,8 +46,9 @@ def source_target_generator(action):
     
     for response in action.responses:
         source_target_pairs = chain(
-            iterate_reponses(response), source_target_pairs)
-
+            iterate_reponses(response), 
+            source_target_generator(response))
+        
     return source_target_pairs
     
 
@@ -77,6 +81,8 @@ class RLDialogWorld(MultiAgentDialogWorld):
         def roll(action, num_rollouts):
             if num_rollouts == -1:
                 return action
+
+            print(action.id)
 
             if action.id == self.active_agent.id:
                 self.static_agent.observe(action.action)
