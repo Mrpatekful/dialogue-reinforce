@@ -22,94 +22,103 @@ Action = namedtuple('Action', ['id', 'action', 'responses'])
 """
 A node in the action-response tree.
 :param id: str, the id of the actor.
-:param action: str, 
-
+:param action: dict, containing the agent actions.
+:param responses: dict, containing the agent's response for the action.
 """
 
+ACTIVE, STATIC = 'active', 'static'
 
-def calculate_reward(actions):
-    for index, (source, target) in enumerate(source_target_generator(actions)):
-        print(index)
-    return 1
-
-
-def iterate_reponses(action):
-    for response in action.responses:
-        yield action.action, response.action
-
-
-def source_target_generator(action):
-    source_target_pairs = []
-
-    if len(action.responses) == 0:
-        return source_target_pairs
-    
-    for response in action.responses:
-        source_target_pairs = chain(
-            iterate_reponses(response), 
-            source_target_generator(response))
-        
-    return source_target_pairs
-    
 
 class RLDialogWorld(MultiAgentDialogWorld):
 
-    def __init__(self, opt, active_agent, static_agent,
+    def __init__(self, opt, active_agent, static_agent, 
                  teacher, shared=None):
+        """"""
         self.id = 'RLDialogWorld'
         self.episode_batch = None
         self.active_agent = active_agent
         self.static_agent = static_agent
-        super(RLDialogWorld, self).__init__(
-            opt, teacher + [static_agent, active_agent], 
-            shared)
+        agents = teacher + [static_agent, active_agent]
+
+        super(RLDialogWorld, self).__init__(opt, agents, shared)
 
     def parley(self):
         """"""
+        # Initial sentence from the dataset
         initial_action = self.agents[0].act()
 
         self.active_agent.zero_grad()
         actions = self.rollout(initial_action)
 
-        reward = calculate_reward(actions)
+        reward = self.calculate_reward(actions, 1)
 
         self.active_agent.observe({'reward': reward})
         self.active_agent.update_params()
 
+    def iterate_reponses(self, action):
+        """"""
+        for response in action.responses:
+            yield {
+                'text': action.action['text'], 
+                'text_vec': action.action['text_vec'], 
+                'labels': response.action['text'],
+                'labels_vec': response.action.get('text_vec', 
+                    self.static_agent._vectorize_text(
+                        response.action['text']))
+            }
+
+    def calculate_reward(self, action, weight):
+        """"""
+        reward = 0
+
+        if len(action.responses) == 0:
+            return 0
+
+        if action.id == ACTIVE:
+            obs_batch = list(self.iterate_reponses(action))
+            batch = self.static_agent.batchify(obs_batch)
+            log_prob = self.static_agent.compute_log_prob(batch, False)
+            reward = reward + log_prob
+
+        # Reduce reward significance for next dialogue turns
+        weight = weight * self.opt['reward_decay']
+        for response in action.responses:
+            reward += self.calculate_reward(response, weight)
+            
+        return reward
+    
     def rollout(self, initial_action):
         """"""
         def roll(action, num_rollouts):
-            if num_rollouts == -1:
-                return action
-
-            print(action.id)
-
-            if action.id == self.active_agent.id:
+            """"""
+            if action.id == ACTIVE:
                 self.static_agent.observe(action.action)
+                act = self.static_agent.act()
                 static_action = Action(
-                    id=self.static_agent.id, 
-                    action=self.static_agent.act(), 
+                    id=STATIC, 
+                    action=act, 
                     responses=[])
 
                 action.responses.append(
                     roll(static_action, num_rollouts))
 
             else:
+                if num_rollouts == 0:
+                    return action
+
                 self.active_agent.observe(action.action)
-                num_rollouts -= 1
                 for _ in range(self.opt['dialog_branches']):
+                    act = self.active_agent.act()
                     active_action = Action(
-                            id=self.active_agent.id,
-                            action=self.active_agent.act(), 
-                            responses=[])
+                        id=ACTIVE,
+                        action=act, 
+                        responses=[])
 
                     action.responses.append(
-                        roll(active_action, num_rollouts))
+                        roll(active_action, num_rollouts - 1))
 
             return action
 
-        return roll(Action(
-                        id=self.static_agent.id, 
-                        action=initial_action, 
-                        responses=[]), 
-                    self.opt['dialog_rounds'])
+        initial = Action(STATIC, initial_action, [])
+
+        return roll(initial, self.opt['dialog_rounds'])

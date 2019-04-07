@@ -23,7 +23,7 @@ from parlai.scripts.train_model import TrainLoop, setup_args
 from parlai.scripts.build_pytorch_data import get_pyt_dict_file
 from parlai.scripts.build_dict import build_dict
 
-from worlds import RLDialogWorld
+from worlds import RLDialogWorld, ACTIVE, STATIC
 from agents import create_agent, freeze_agent  # pylint: disable=import-error
 
 
@@ -34,14 +34,27 @@ def setup_rl_args():
         '-dl', 
         '--dialog_rounds',
         type=int, 
-        default=3,
+        default=2,
         help='Number of rollouts rounds for estimating the reward.')
     reinforce.add_argument(
         '-dl', 
         '--dialog_branches',
         type=int, 
-        default=3,
+        default=5,
         help='Branches of the active agent responses during rollout.')
+    reinforce.add_argument(
+        '-lmp',
+        '--language_model_path',
+        type=str,
+        default=None,
+        help='Path of the language model for the reward.')
+    reinforce.add_argument(
+        '-rd',
+        '--reward_decay',
+        type=float,
+        default=0.9,
+        help='Value of the reward decay.')
+
     return parser
 
 
@@ -116,9 +129,9 @@ class ReinforceLoop(TrainLoop):
 
         # Freeze the model for the static dialogue partner
         static_agent = copy.deepcopy(self.agent)
-        self.agent.id += 'Active'
+        self.agent.id = ACTIVE
 
-        static_agent.id += 'Static'
+        static_agent.id = STATIC
         freeze_agent(static_agent)
 
         self.world = create_task(opt, self.agent, static_agent)

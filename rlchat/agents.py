@@ -17,11 +17,12 @@ from parlai.core.agents import (
     add_task_flags_to_agent_opt,
     get_task_module)
 
+from parlai.core.torch_agent import AttrDict
+
 from parlai.core.torch_generator_agent import (
     TorchGeneratorModel,
     TorchGeneratorAgent)
 
-from parlai.core.torch_agent import Output
 from parlai.core.utils import padded_tensor
 
 from torch.autograd import Variable, backward
@@ -29,6 +30,18 @@ from torch.distributions import Categorical
 from torch.nn import Module
 
 from os.path import isfile
+
+
+class Output(AttrDict):
+
+    def __init__(self, text=None, text_candidates=None, 
+                 text_vec=None, **kwargs):
+        """"""
+        super().__init__(
+            text=text, 
+            text_candidates=text_candidates, 
+            text_vec=text_vec,
+            **kwargs)
 
 
 def decode_probabilistic(model, encoder_states, batch_size, 
@@ -106,8 +119,7 @@ def forward(self, *inputs, ys=None, cand_params=None,
         # keep track of longest label we've ever seen
         # we'll never produce longer ones than that 
         # during prediction
-        self.longest_label = max(
-            self.longest_label, ys.size(1))
+        self.longest_label = max(self.longest_label, ys.size(1))
 
     # use cached encoding if available
     encoder_states = (
@@ -134,7 +146,7 @@ def forward(self, *inputs, ys=None, cand_params=None,
     return scores, preds, encoder_states
 
 
-def replace_forward(model):
+def replace_forward_method(model):
     """
     Extends the ``torch.nn.Module`` type model instance
     by adding/replacing bound methods.
@@ -214,6 +226,7 @@ def create_agent(opt):
             return batch
 
         def add_labels(self, batch, label_vecs):
+            """"""
             labels = [self._v2t(l) for l in label_vecs]
             ys, y_lens = padded_tensor(
                 label_vecs, self.NULL_IDX, self.use_cuda)
@@ -222,9 +235,11 @@ def create_agent(opt):
             batch.label_vec=ys
             batch.label_lengths=y_lens
 
-        def compute_log_prob(self, batch):
+        def compute_log_prob(self, batch, track_metrics=True):
+            """"""
             if batch.label_vec is None:
                 raise ValueError('Cannot compute loss without a label.')
+
             model_output = self.model(
                 *self._model_input(batch), ys=batch.label_vec)
             scores, preds, *_ = model_output
@@ -234,10 +249,14 @@ def create_agent(opt):
             notnull = batch.label_vec.ne(self.NULL_IDX)
             target_tokens = notnull.long().sum().item()
             correct = ((batch.label_vec == preds) * notnull).sum().item()
-            self.metrics['correct_tokens'] += correct
-            self.metrics['nll_loss'] += log_prob.item()
-            self.metrics['num_tokens'] += target_tokens
+
+            if track_metrics:
+                self.metrics['correct_tokens'] += correct
+                self.metrics['nll_loss'] += log_prob.item()
+                self.metrics['num_tokens'] += target_tokens
+
             log_prob /= target_tokens  # average loss per token
+
             return log_prob
 
         def train_step(self, batch):
@@ -263,7 +282,10 @@ def create_agent(opt):
                 else:
                     raise e
             
-            return Output(batch.labels, None)
+            return Output(
+                text=batch.labels,
+                text_vec=batch.label_vec,
+                text_candidates=None)
 
         def observe(self, observation):
             """
@@ -273,14 +295,14 @@ def create_agent(opt):
             if observation.get('reward') is not None:
                 reward = observation['reward']
                 for log_prob in self.log_probs:
-                    loss = log_prob * reward
-                    loss.backward()
+                    loss = - log_prob * reward
+                    self.backward(loss)
                 
                 self.log_probs = []
 
                 for parameter in self.model.parameters():  # pylint: disable=access-member-before-definition
                     parameter.grad.data.clamp_(min=-5, max=5)
-
+                
             if observation.get('model') is not None:
                 # Deepcopied and frozen clone of the model
                 self.model = observation['model']
@@ -288,10 +310,21 @@ def create_agent(opt):
             return super(RLTorchGeneratorAgent, self).observe(
                 observation)
 
+        def match_batch(self, batch_reply, valid_inds, output=None):
+            """"""
+            batch_reply = super(RLTorchGeneratorAgent, self).match_batch(
+                batch_reply, valid_inds, output)
+
+            if getattr(output, 'text_vec', None) is not None:
+                for idx, val_idx in enumerate(valid_inds):
+                    batch_reply[val_idx]['text_vec'] = output.text_vec[idx]
+            
+            return batch_reply
+            
         def build_model(self, *args, **kwargs):
             super(RLTorchGeneratorAgent, self).build_model(
                 *args, **kwargs)
-            replace_forward(self.model)
+            replace_forward_method(self.model)
 
     return RLTorchGeneratorAgent(opt)
 
