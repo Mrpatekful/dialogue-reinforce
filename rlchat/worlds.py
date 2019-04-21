@@ -29,6 +29,37 @@ A node in the action-response tree.
 ACTIVE, STATIC = 'active', 'static'
 
 
+DULL_RESPONSES = [
+    {'labels': "i do n ' t know ."},
+    {'labels': 'why ?'},
+    {'labels': 'i am sorry .'},
+    {'labels': 'i see .'}
+]
+
+
+def calculate_dull_prob(obs, agent):
+    """"""
+    model = agent.model
+    model.eval()
+    vectorized_text = obs['text_vec']
+    batch = agent.batchify([
+        {**vectorized_text, **agent.vectorize(dull_response)} for
+        dull_response in DULL_RESPONSES
+    ])
+
+    out = model(batch.text_vec, batch.label_vec)
+    # generated response
+
+    notnull = batch.label_vec.ne(agent.NULL_IDX)
+    target_tokens = notnull.long().sum().item()
+
+    scores = out[0]
+    score_view = scores.view(-1, scores.size(-1))
+    loss = agent.eoa_loss(score_view, batch.label_vec.view(-1))
+    loss = loss.sum().data.cpu().numpy() / target_tokens / len(DULL_RESPONSES)
+    return loss
+
+
 class RLDialogWorld(MultiAgentDialogWorld):
 
     def __init__(self, opt, active_agent, static_agent, 
@@ -50,7 +81,8 @@ class RLDialogWorld(MultiAgentDialogWorld):
         self.active_agent.zero_grad()
         actions = self.rollout(initial_action)
 
-        reward = self.calculate_reward(actions, 1)
+        with torch.no_gard(): # pylint: disable=no-member
+            reward = self.calculate_reward(actions, 1)
 
         self.active_agent.observe({'reward': reward})
         self.active_agent.update_params()
@@ -76,15 +108,16 @@ class RLDialogWorld(MultiAgentDialogWorld):
 
         if action.id == ACTIVE:
             obs_batch = list(self.iterate_reponses(action))
-            batch = self.static_agent.batchify(obs_batch)
+            batch = self.active_agent.batchify(obs_batch)
             log_prob = self.static_agent.compute_log_prob(batch, False)
-            reward = reward + log_prob
+            reward = log_prob - calculate_dull_prob(
+                obs_batch, self.static_agent)
 
         # Reduce reward significance for next dialogue turns
         weight = weight * self.opt['reward_decay']
         for response in action.responses:
             reward += self.calculate_reward(response, weight)
-            
+           
         return reward
     
     def rollout(self, initial_action):
