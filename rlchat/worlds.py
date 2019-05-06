@@ -37,17 +37,18 @@ DULL_RESPONSES = [
 ]
 
 
-def calculate_dull_prob(obs, agent):
+def calculate_dull_log_prob(resp_batch, agent):
     """"""
     model = agent.model
     model.eval()
-    vectorized_text = obs['text_vec']
+    print(resp_batch)
     batch = agent.batchify([
-        {**vectorized_text, **agent.vectorize(dull_response)} for
+        {**resp_batch, 
+        'labels': dull_response['labels'],
+        'labels_vec': agent._vectorize_text(dull_response['labels'])} for
         dull_response in DULL_RESPONSES
     ])
-
-    out = model(batch.text_vec, batch.label_vec)
+    out = model(batch.text_vec, ys=batch.label_vec)
     # generated response
 
     notnull = batch.label_vec.ne(agent.NULL_IDX)
@@ -55,8 +56,9 @@ def calculate_dull_prob(obs, agent):
 
     scores = out[0]
     score_view = scores.view(-1, scores.size(-1))
-    loss = agent.eoa_loss(score_view, batch.label_vec.view(-1))
+    loss = agent.criterion(score_view, batch.label_vec.view(-1))
     loss = loss.sum().data.cpu().numpy() / target_tokens / len(DULL_RESPONSES)
+
     return loss
 
 
@@ -81,7 +83,7 @@ class RLDialogWorld(MultiAgentDialogWorld):
         self.active_agent.zero_grad()
         actions = self.rollout(initial_action)
 
-        with torch.no_gard(): # pylint: disable=no-member
+        with torch.no_grad():
             reward = self.calculate_reward(actions, 1)
 
         self.active_agent.observe({'reward': reward})
@@ -107,11 +109,13 @@ class RLDialogWorld(MultiAgentDialogWorld):
             return 0
 
         if action.id == ACTIVE:
-            obs_batch = list(self.iterate_reponses(action))
-            batch = self.active_agent.batchify(obs_batch)
-            log_prob = self.static_agent.compute_log_prob(batch, False)
-            reward = log_prob - calculate_dull_prob(
-                obs_batch, self.static_agent)
+            for resp in self.iterate_reponses(action):
+                batch = self.active_agent.batchify([resp])
+
+                log_prob = self.static_agent.compute_log_prob(batch, False)
+
+                reward += log_prob - calculate_dull_log_prob(
+                    resp, self.static_agent)
 
         # Reduce reward significance for next dialogue turns
         weight = weight * self.opt['reward_decay']

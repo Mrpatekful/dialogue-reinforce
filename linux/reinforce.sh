@@ -1,7 +1,7 @@
 #!/bin/sh
 
 MODEL=${1:-seq2seq}
-TASK=${2:-dailydialog}
+TASK=${2:-dailydialog:no_start}
 
 MODEL_DIR=$(dirname "$0")/../checkpoints/$MODEL
 MODEL_FILE=${3:-$MODEL_DIR/"model"}
