@@ -24,10 +24,12 @@ from parlai.core.torch_generator_agent import (
     TorchGeneratorAgent)
 
 from parlai.core.utils import padded_tensor
+from parlai.core.agents import _load_opt_file
 
 from torch.autograd import Variable, backward
 from torch.distributions import Categorical
 from torch.nn import Module
+
 
 from os.path import isfile
 
@@ -200,6 +202,8 @@ def create_agent(opt):
     learning functionality.
     """
     torch_generator_agent_subclass = get_agent_type(opt)
+    loaded_opt = _load_opt_file(opt['model_file'] + '.opt')
+    opt.update(loaded_opt)
     assert torch_generator_agent_subclass is not None
 
     class RLTorchGeneratorAgent(torch_generator_agent_subclass):
@@ -301,7 +305,8 @@ def create_agent(opt):
                 self.log_probs = []
 
                 for parameter in self.model.parameters():  # pylint: disable=access-member-before-definition
-                    parameter.grad.data.clamp_(min=-5, max=5)
+                    if parameter.grad is not None:
+                        parameter.grad.data.clamp_(min=-5, max=5)
                 
             if observation.get('model') is not None:
                 # Deepcopied and frozen clone of the model

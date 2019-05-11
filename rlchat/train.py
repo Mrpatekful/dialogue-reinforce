@@ -76,7 +76,9 @@ def create_task(opt, active_agent, static_agent):
     world = create_task_world(opt, active_agent, static_agent)
 
     if opt.get('batchsize', 1) > 1:
-        raise NotImplementedError('Btaching is not implemented yet.')
+        opt['batch_size'] = 1
+        print('Batching is not implemented yet, setting bs to 1.')
+        # raise NotImplementedError('Btaching is not implemented yet.')
         # world = BatchWorld(opt, world)
 
     return world
@@ -216,6 +218,34 @@ class ReinforceLoop(TrainLoop):
 
         if opt['tensorboard_log'] is True:
             self.writer = TensorboardLogger(opt)
+
+    def train(self):
+        opt = self.opt
+        world = self.world
+        with world:
+            while True:
+                # do one example / batch of examples
+                world.parley()
+                self.parleys += 1
+
+                # get the total training examples done, compute epochs
+                self._total_epochs = (
+                    self.world.get_total_epochs()
+                )
+                exs_per_epoch = self.world.num_examples()
+                self._total_exs = int(np.round(self._total_epochs * exs_per_epoch))
+
+                if self.log_time.time() > self.log_every_n_secs:
+                    self.log()
+                if (
+                    self.save_time.time() > self.save_every_n_secs and
+                    opt.get('model_file')
+                ):
+                    print("[ saving model checkpoint: {}.checkpoint".format(
+                        opt['model_file']
+                    ))
+                    self.save_model('.checkpoint')
+                    self.save_time.reset()
 
 
 if __name__ == '__main__':

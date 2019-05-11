@@ -94,11 +94,11 @@ class RLDialogWorld(MultiAgentDialogWorld):
         for response in action.responses:
             yield {
                 'text': action.action['text'], 
-                'text_vec': action.action['text_vec'], 
+                'text_vec': action.action['text_vec'].cpu(), 
                 'labels': response.action['text'],
                 'labels_vec': response.action.get('text_vec', 
                     self.static_agent._vectorize_text(
-                        response.action['text']))
+                        response.action['text']).cpu())
             }
 
     def calculate_reward(self, action, weight):
@@ -131,6 +131,7 @@ class RLDialogWorld(MultiAgentDialogWorld):
             if action.id == ACTIVE:
                 self.static_agent.observe(action.action)
                 act = self.static_agent.act()
+                act['text_vec'] = act['text_vec'].cpu()
                 static_action = Action(
                     id=STATIC, 
                     action=act, 
@@ -146,6 +147,7 @@ class RLDialogWorld(MultiAgentDialogWorld):
                 self.active_agent.observe(action.action)
                 for _ in range(self.opt['dialog_branches']):
                     act = self.active_agent.act()
+                    act['text_vec'] = act['text_vec'].cpu()
                     active_action = Action(
                         id=ACTIVE,
                         action=act, 

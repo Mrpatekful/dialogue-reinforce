@@ -1,9 +1,9 @@
 #!/bin/bash
 
-MODEL=${1:-seq2seq}
-TASK=${2:-dailydialog}
+MODEL=${1:-transformer/generator}
+TASK=${2:-dailydialog:no_start}
 
-MODEL_DIR=$(dirname "$0")/../checkpoints/$MODEL
+MODEL_DIR=$(dirname "$0")/../checkpoints/transformer
 MODEL_FILE=${3:-$MODEL_DIR/"model"}
 
 mkdir -p $(dirname "$0")/../checkpoints
